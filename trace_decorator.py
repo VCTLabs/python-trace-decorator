@@ -203,9 +203,9 @@ def _formatter_class(name, value):
     """
     __mname = value.__module__
     if __mname != '__main__':
-        return "%s = <type '%s.%s'>" % (name, __mname, value.__name__)
+        return "%s = <type '%s.%s'>" % (name, __mname, value.__class__.__name__)
     else:
-        return "%s = <type '%s'>" % (name, value.__name__)
+        return "%s = <type '%s'>" % (name, value.__class__.__name__)
 
 def _formatter_named(name, value):
     """Format a named parameter and its value.
@@ -488,8 +488,20 @@ def trace(_name):
         __klass = False
         __rewrap = lambda x: x
         if type(_func) in FunctionTypes:
-            # functions do not belong to a class.
-            __cname = None
+            try: 
+                # in python3, functions might belong to a class...
+                full_name = _func.__qualname__
+                name_parts = full_name.split('.')
+                if (len(name_parts) > 1):
+                    # take off func name, rest is class
+                    name_parts.pop() 
+                    __cname = ".".join(name_parts)
+                    __self = True
+                else:
+                    __cname = None
+            except: 
+                # but in python2, functions never belong to a class.
+                __cname = None
         elif type(_func) in MethodTypes:
             # im_self is None for unbound instance methods.
             # Assumption: trace is only called on unbound methods.
