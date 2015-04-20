@@ -5,11 +5,11 @@
 #  This code may be used pursuant to the MIT License.
 ######################################################################
 
-"""This package provides facilities to attach decorators to classes or
+"""This package provides facilities to attach trace_decorator to classes or
 modules (possibly recursively).  A tracing decorator is provided for
 tracing function and method calls in your applications.
 
-from decorators import *
+from trace_decorator import *
 
 @trace
 def function(...):
@@ -38,7 +38,7 @@ class ClassName(object):
     All methods on the class will be traced.
     '''
     __logger__ = loggerOrLoggerName # optional
-    __metaclass__ = decorators.TraceMetaClass
+    __metaclass__ = trace_decorator.TraceMetaClass
     def method(...):
         pass
 
