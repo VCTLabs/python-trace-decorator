@@ -54,7 +54,7 @@ You can also attach a decorator to an existing module.
 import inspect
 import logging
 import sys
-import thread
+import threading
 import types
 
 from functools import wraps
@@ -63,12 +63,6 @@ from itertools import chain
 FunctionTypes = tuple(set((
     types.BuiltinFunctionType,
     types.FunctionType
-)))
-
-MethodTypes = tuple(set((
-    types.BuiltinMethodType,
-    types.MethodType,
-    types.UnboundMethodType
 )))
 
 class _C(object):
@@ -83,21 +77,30 @@ class _C(object):
     @property
     def propertyMethod(self): pass
 
+    def normalMethod(self): pass
+
 ClassMethodType = _C.classMethodType
 StaticMethodType = _C.staticMethodType
 PropertyType = type(_C.propertyMethod)
+# use this instead of types.UnboundMethodType, which got cut from python3
+NormalMethodType = type(_C.normalMethod)
+
+MethodTypes = tuple(set((
+    types.BuiltinMethodType,
+    types.MethodType,
+    NormalMethodType
+)))
 
 CallableTypes = tuple(set((
     types.BuiltinFunctionType,
     types.FunctionType,
     types.BuiltinMethodType,
     types.MethodType,
-    types.UnboundMethodType,
+    NormalMethodType,
     ClassMethodType
 )))
 
 __all__ = (
-    'ThreadLocal',
     'TraceMetaClass',
     'attach',
     'getFormatter',
@@ -181,39 +184,6 @@ class PrependLoggerFactory(object):
 
     def getLogger(self, name):
         return logging.getLogger('.'.join((self.__prefix, name)))
-
-######################################################################
-#  class ThreadLocal
-######################################################################
-
-class ThreadLocal(object):
-    """Instances of this class provide a thread-local variable.
-    """
-    def __init__(self):
-        self.__lock = thread.allocate_lock()
-        self.__vars = dict()
-        self.__init = None
-
-    @property
-    def value(self):
-        with self.__lock:
-            try:
-                return self.__vars[thread.get_ident()]
-            except KeyError:
-                return self.__init
-    @value.setter
-    def value(self, value):
-        with self.__lock:
-            self.__vars[thread.get_ident()] = value
-
-    @property
-    def initialValue(self):
-        with self.__lock:
-            return self.__init
-    @initialValue.setter
-    def initialValue(self, value):
-        with self.__lock:
-            self.__init = value
 
 ######################################################################
 #  Formatter functions
@@ -385,7 +355,7 @@ __builtin_defaults = {
     '""': "",
     '-1': -1,
     '0' : 0,
-    '0666': 0666,
+    '0666': 0o666,
     'False': False,
     'None': None,
     'True': True,
@@ -424,8 +394,8 @@ def __lookup_builtin(name):
         print >>sys.stderr, "Warning: builtin function %r is missing prototype" % name
     return ( len(params), params, defaults )
 
-_ = ThreadLocal()
-_.initialValue = False
+_ = threading.local()
+_.value = False
 
 def trace(_name):
     """Function decorator that logs function entry and exit details.
@@ -558,7 +528,7 @@ def trace(_name):
             logger = getLoggerFactory().getLogger(__fqfn)
         elif loggable(_name):
             logger = _name
-        elif isinstance(_name, basestring):
+        elif isinstance(_name, (bytes, str)):
             logger = getLoggerFactory().getLogger(_name)
         else:
             raise ValueError('invalid object %r: must be a function, a method, a string or an object that implements the Logger API' % _name)
@@ -574,16 +544,16 @@ def trace(_name):
 
         ####
         #  Here we are really mucking around in function internals.
-        #  func_code is the low level 'code' instance that describes
+        #  __code__ is the low level 'code' instance that describes
         #  the function arguments, variable and other stuff.
         #
-        #  func.func_code.co_argcount - number of function arguments.
-        #  func.func_code.co_varnames - function variables names, the
+        #  func.__code__.co_argcount - number of function arguments.
+        #  func.__code__.co_varnames - function variables names, the
         #      first co_argcount values are the argument names.
-        #  func.func_defaults - contains default arguments
+        #  func.__defaults__ - contains default arguments
 
         try:
-            code = _func.func_code
+            code = _func.__code__
         except AttributeError:
             co_argcount , \
             co_varnames , \
@@ -591,8 +561,8 @@ def trace(_name):
         else:
             co_argcount = code.co_argcount
             co_varnames = code.co_varnames[:co_argcount]
-            if _func.func_defaults:
-                co_defaults = dict(zip(co_varnames[-len(_func.func_defaults):], _func.func_defaults))
+            if _func.__defaults__:
+                co_defaults = dict(zip(co_varnames[-len(_func.__defaults__):], _func.__defaults__))
             else:
                 co_defaults = dict()
             if __klass:
@@ -626,7 +596,7 @@ def attachToProperty(decorator, klass, k, prop_attr, prop_decorator):
     return prop_decorator(value)
 
 def attachToClass(decorator, klass, recursive = True):
-    for k, v in klass.__dict__.iteritems():
+    for k, v in klass.__dict__.items():
         t = type(v)
         if t is types.FunctionType or t is ClassMethodType:
             setattr(klass, k, decorator(getattr(klass, k)))
@@ -743,7 +713,7 @@ if __name__ == '__main__':
     test.test = 1
     assert 1 == test.test
     test.method()
-    print str(test)
+    print(str(test))
 
     @trace(logger)
     def test(x, y, z = True):
@@ -775,4 +745,4 @@ if __name__ == '__main__':
 
     myzip = trace('main')(zip)
     for i, j in myzip(xrange(5), xrange(5, 10)):
-        print i, j
+        print(i, j)
