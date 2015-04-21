@@ -8,7 +8,8 @@ trace_decorator.attach(trace_decorator.trace("This is a test"), test_module)
 
 testme = test_module.SomeClass()
 testme.static_method_am_i(1)
-testme.instance_method_am_i(2)
+#testme.class_method_am_i(2)
+testme.instance_method_am_i(3)
 
 test_module.some_func(42)
 

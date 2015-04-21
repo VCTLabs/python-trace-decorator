@@ -533,25 +533,39 @@ def trace(_name):
                 name_parts = full_name.split('.')
                 if (len(name_parts) > 1):
                     # take off func name, rest is class
-                    name_parts.pop() 
+                    func_name = name_parts.pop() 
                     __cname = ".".join(name_parts)
-                    __self = True
+                    # hackery to decide whether static or instance method
+                    if type(_func.__class__.__dict__[func_name]) == StaticMethodType: 
+                        __klass = True
+                    else:
+                        __self = True
                 else:
                     __cname = None
             except: 
                 # but in python2, functions never belong to a class.
                 __cname = None
         elif type(_func) in MethodTypes:
-            # im_self is None for unbound instance methods.
-            # Assumption: trace is only called on unbound methods.
-            if _func.im_self is not None:
-                __rewrap = classmethod
-                __cname = _func.im_self.__name__
+            try: 
+                # python2:
+                #   im_self is None for unbound instance methods.
+                #   Assumption: trace is only called on unbound methods.
+                if _func.im_self is not None:
+                    __rewrap = classmethod
+                    __cname = _func.im_self.__name__
+                    __klass = True
+                else:
+                    __cname = _func.im_class.__name__
+                    __self  = True
+                _func = _func.im_func
+            except:
+                # python3: only class methods end up here
+                full_name = _func.__qualname__
+                name_parts = full_name.split('.')
+                # take off func name, rest is class
+                func_name = name_parts.pop() 
+                __cname = ".".join(name_parts)
                 __klass = True
-            else:
-                __cname = _func.im_class.__name__
-                __self  = True
-            _func = _func.im_func
         else:
             # other callables are not supported yet.
             return _func
