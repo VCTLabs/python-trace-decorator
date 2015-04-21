@@ -130,7 +130,6 @@ def loggable(obj):
         return True
     else:
         return ( inspect.isclass(obj) and
-                 inspect.ismethod(getattr(obj, 'debug', None)) and
                  inspect.ismethod(getattr(obj, 'isEnabledFor', None)) and
                  inspect.ismethod(getattr(obj, 'setLevel', None)) )
 
@@ -138,10 +137,39 @@ def loggable(obj):
 #  LoggerFactory Property
 ######################################################################
 
+# lower priority than DEBUG, which is normally 10
+TRACE = 5 
+
+def addTraceLevel(factory):
+    """Add a TRACE level with even lower priority than DEBUG
+    to the given logger factory object
+    """
+    factory.addLevelName(TRACE, "TRACE")
+
+# function to be used as logger.trace()
+def loggerTrace(self, message, *args):
+    if self.isEnabledFor(TRACE):
+            self._log(TRACE, message, args)
+
+# make factory generate logger with trace() method
+def addTraceMethod(factory):
+    # rename original factory.getLogger()
+    factory.getLoggerNoTrace = factory.getLogger
+    # create new factory.getLogger() that creates logger with original getLogger,
+    # but then adds logger.trace() method
+    def getLoggerTrace(*args):
+        logger = factory.getLoggerNoTrace(*args)
+        # MethodType() makes 'self' work as expected for instance method 
+        logger.trace = types.MethodType(loggerTrace, logger)
+        return logger
+    factory.getLogger = getLoggerTrace
+
 _logger_factory = logging
+addTraceLevel(_logger_factory)
+addTraceMethod(_logger_factory)
+
 def getLoggerFactory():
     """Retrieve the current factory object for creating loggers.
-    The default is to use the logging module.
     """
     global _logger_factory
     return _logger_factory
@@ -150,11 +178,22 @@ def setLoggerFactory(factory):
     """Set a factory object for creating loggers.  This object must
     publish a method or class named 'getLogger' that takes a string
     parameter naming the logger instance to retrieve.  Logger objects
-    returned by this factory must, at a minimum, expose the methods
-    'isEnabledFor' and 'debug'.
+    returned by this factory must, at a minimum, expose the method
+    'isEnabledFor' and setLevel.
+
+    The logger factory is modified by adding TRACE logging level
+    and making it generate loggers with a corresponding trace() 
+    method for logging at TRACE level.
     """
     global _logger_factory
     _logger_factory = factory
+
+    # add TRACE level 
+    addTraceLevel(_logger_factory)
+    # add logger.trace() method for logging at TRACE level
+    addTraceMethod(_logger_factory)
+
+
 
 ######################################################################
 #  class PrependLoggerFactory
@@ -420,7 +459,7 @@ def trace(_name):
                 return af_named(name, value)
 
         def wrapper(*__argv, **__kwds):
-            if not logger.isEnabledFor(logging.DEBUG) or _.value:
+            if not logger.isEnabledFor(TRACE) or _.value:
                 return _func(*__argv, **__kwds)
 
             try:
@@ -447,7 +486,7 @@ def trace(_name):
                 leave = [ pre_leave ]
 
                 try:
-                    logger.debug(''.join(enter))
+                    logger.trace(''.join(enter))
                     try:
                         try:
                             _.value = False
@@ -474,7 +513,7 @@ def trace(_name):
                             leave.append(' => ')
                             leave.append(chop(result))
                 finally:
-                    logger.debug(''.join(leave))
+                    logger.trace(''.join(leave))
             finally:
                 _.value = False
 
@@ -587,7 +626,7 @@ def trace(_name):
     #  trace
     ####
 
-    logging.basicConfig(level = logging.DEBUG)
+    logging.basicConfig(level = TRACE)
     if type(_name) in CallableTypes:
         return decorator(_name)
     else:
@@ -662,7 +701,7 @@ class TraceMetaClass(type):
         return klass
 
 if __name__ == '__main__':
-    logging.basicConfig(level = logging.DEBUG)
+    logging.basicConfig(level = TRACE)
     logger = logging.root
 
     class Test(object):
