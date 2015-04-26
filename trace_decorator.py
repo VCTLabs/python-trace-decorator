@@ -57,7 +57,7 @@ import sys
 import threading
 import types
 
-from functools import wraps
+from functools import update_wrapper
 from itertools import chain
 
 FunctionTypes = tuple(set((
@@ -144,6 +144,7 @@ def addTraceLevel(factory):
     """Add a TRACE level with even lower priority than DEBUG
     to the given logger factory object
     """
+    factory.TRACE = TRACE
     factory.addLevelName(TRACE, "TRACE")
 
 # function to be used as logger.trace()
@@ -443,7 +444,7 @@ def trace(_name):
 
     Construct a function or method proxy to generate call traces.
     """
-    def decorator(_func):
+    def decorator(_func, func_type=None, class_obj=None):
         """This is the actual decorator function that wraps the
         \var{_func} function for detailed logging.
         """
@@ -523,49 +524,29 @@ def trace(_name):
         #  decorator
         ####
 
+        if not func_type:
+            func_type = type(_func)
+
         __self  = False
         __klass = False
-        __rewrap = lambda x: x
-        if type(_func) in FunctionTypes:
-            try: 
-                # in python3, functions might belong to a class...
-                full_name = _func.__qualname__
-                name_parts = full_name.split('.')
-                if (len(name_parts) > 1):
-                    # take off func name, rest is class
-                    func_name = name_parts.pop() 
-                    __cname = ".".join(name_parts)
-                    # hackery to decide whether static or instance method
-                    if type(_func.__class__.__dict__[func_name]) == StaticMethodType: 
-                        __klass = True
-                    else:
-                        __self = True
-                else:
-                    __cname = None
-            except: 
-                # but in python2, functions never belong to a class.
+        if func_type == ClassMethodType:
+            __klass = True
+            __cname = class_obj.__name__
+            _func = _func.__func__
+        elif func_type == StaticMethodType:
+            __cname = class_obj.__name__
+        elif func_type in FunctionTypes:
+            if class_obj:
+                # python3 instance method
+                __self = True
+                __cname = class_obj.__name__
+            else:
+                # normal function
                 __cname = None
-        elif type(_func) in MethodTypes:
-            try: 
-                # python2:
-                #   im_self is None for unbound instance methods.
-                #   Assumption: trace is only called on unbound methods.
-                if _func.im_self is not None:
-                    __rewrap = classmethod
-                    __cname = _func.im_self.__name__
-                    __klass = True
-                else:
-                    __cname = _func.im_class.__name__
-                    __self  = True
-                _func = _func.im_func
-            except:
-                # python3: only class methods end up here
-                full_name = _func.__qualname__
-                name_parts = full_name.split('.')
-                # take off func name, rest is class
-                func_name = name_parts.pop() 
-                __cname = ".".join(name_parts)
-                __klass = True
+        elif func_type in MethodTypes:
+            # python2 instance method
+            __self = True
+            __cname = class_obj.__name__
         else:
             # other callables are not supported yet.
             return _func
@@ -574,7 +555,7 @@ def trace(_name):
 
         # Do not wrap initialization and conversion methods.
         if __fname in ('__init__', '__new__', '__repr__', '__str__'):
-            return __rewrap(_func)
+            return _func
 
         # Generate the Fully Qualified Function Name.
 
@@ -634,7 +615,7 @@ def trace(_name):
                 __klass = co_varnames[0]
             if __self:
                 __self  = co_varnames[0]
-        return __rewrap(wraps(_func)(wrapper))
+        return update_wrapper(wrapper, _func)
 
     ####
     #  trace
@@ -663,10 +644,14 @@ def attachToProperty(decorator, klass, k, prop_attr, prop_decorator):
 def attachToClass(decorator, klass, recursive = True):
     for k, v in klass.__dict__.items():
         t = type(v)
-        if t is types.FunctionType or t is ClassMethodType:
-            setattr(klass, k, decorator(getattr(klass, k)))
+        if t is types.FunctionType:
+            setattr(klass, k, decorator(getattr(klass, k), t, klass))
+        elif t is ClassMethodType:
+            setattr(klass, k, decorator(getattr(klass, k), t, klass))
+            #setattr(klass, k, getattr(klass, k))
+            #print("Class method skippage")
         elif t is StaticMethodType:
-            setattr(klass, k, staticmethod(decorator(getattr(klass, k))))
+            setattr(klass, k, staticmethod(decorator(getattr(klass, k), t, klass)))
         elif t is PropertyType:
             value = getattr(klass, k)
             value = attachToProperty(decorator, klass, k, value.fget, value.getter)
