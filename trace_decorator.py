@@ -634,7 +634,9 @@ def trace(_name):
 def attachToProperty(decorator, klass, k, prop_attr, prop_decorator):
     if prop_attr is not None:
         setattr(klass, k, prop_attr)
-        value = decorator(getattr(klass, k))
+        # pass in the class to decorator, but func_type=None means let 
+        # decorator determine method type
+        value = decorator(getattr(klass, k), None, klass)
     else:
         value = None
     # Passing "None" to the property decorator causes the new property
@@ -648,8 +650,6 @@ def attachToClass(decorator, klass, recursive = True):
             setattr(klass, k, decorator(getattr(klass, k), t, klass))
         elif t is ClassMethodType:
             setattr(klass, k, decorator(getattr(klass, k), t, klass))
-            #setattr(klass, k, getattr(klass, k))
-            #print("Class method skippage")
         elif t is StaticMethodType:
             setattr(klass, k, staticmethod(decorator(getattr(klass, k), t, klass)))
         elif t is PropertyType:
